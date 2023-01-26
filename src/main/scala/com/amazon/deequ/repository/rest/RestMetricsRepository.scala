@@ -57,7 +57,8 @@ class RestMetricsRepository(readRequest: Request[Void], writeRequest: Request[Vo
     val serializedResult = AnalysisResultSerde.serialize(
       Seq(AnalysisResult(resultKey, analyzerContextWithSuccessfulValues))
     )
-
+    System.out.println("################# HELLO DEEQU WRITING REST CONTENT:" +
+      " ##################" + serializedResult)
     writeRequest.setContent(new ByteArrayInputStream(serializedResult.getBytes("UTF-8")))
 
     apiHelper.writeHttpRequest(writeRequest)
@@ -139,7 +140,10 @@ class RestMetricsRepositoryMultipleResultsLoader(apiHelper: RestApiHelper,
     })
 
     val allResults = contentString
-      .map { text => AnalysisResultSerde.deserialize(text) }
+      .map { text =>
+        System.out.println("DEEQU HELLO READING DATA: " + text)
+        AnalysisResultSerde.deserialize(text)
+      }
       .getOrElse(Seq.empty)
 
     val selection = allResults

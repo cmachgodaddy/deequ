@@ -50,7 +50,7 @@ class FileSystemMetricsRepository(session: SparkSession, path: String) extends M
     val serializedResult = AnalysisResultSerde.serialize(
       previousAnalysisResults ++ Seq(AnalysisResult(resultKey, analyzerContextWithSuccessfulValues))
     )
-    System.out.println("DEEQU HELLO SAVING DATA: " + serializedResult)
+
     FileSystemMetricsRepository.writeToFileOnDfs(session, path, {
       val bytes = serializedResult.getBytes(FileSystemMetricsRepository.CHARSET_NAME)
       _.write(bytes)
@@ -64,13 +64,11 @@ class FileSystemMetricsRepository(session: SparkSession, path: String) extends M
     *                        DQ checks were run on.
     */
   override def loadByKey(resultKey: ResultKey): Option[AnalyzerContext] = {
-    System.out.println("DEEQU HELLO LOADING DATA BY KEY")
     load().get().find(_.resultKey == resultKey).map(_.analyzerContext)
   }
 
   /** Get a builder class to construct a loading query to get AnalysisResults */
   override def load(): MetricsRepositoryMultipleResultsLoader = {
-    System.out.println("DEEQU HELLO LOADING DATA NORMAL")
     new FileSystemMetricsRepositoryMultipleResultsLoader(session, path)
   }
 }
@@ -132,10 +130,7 @@ class FileSystemMetricsRepositoryMultipleResultsLoader(
       .readFromFileOnDfs(session, path, {
         IOUtils.toString(_, FileSystemMetricsRepository.CHARSET_NAME)
       })
-      .map { fileContent =>
-        System.out.println("DEEQU HELLO READING DATA: " + fileContent)
-        AnalysisResultSerde.deserialize(fileContent)
-      }
+      .map { fileContent => AnalysisResultSerde.deserialize(fileContent) }
       .getOrElse(Seq.empty)
 
     val selection = allResults

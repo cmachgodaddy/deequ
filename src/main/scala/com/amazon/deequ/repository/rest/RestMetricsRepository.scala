@@ -20,8 +20,7 @@ import com.amazon.deequ.analyzers.Analyzer
 import com.amazon.deequ.analyzers.runners.AnalyzerContext
 import com.amazon.deequ.metrics.Metric
 import com.amazon.deequ.repository._
-import com.amazonaws.http.{AmazonHttpClient, DefaultErrorResponseHandler,
-  ExecutionContext, HttpResponse, HttpResponseHandler}
+import com.amazonaws.http.{AmazonHttpClient, DefaultErrorResponseHandler, ExecutionContext, HttpResponse, HttpResponseHandler}
 import com.amazonaws.retry.PredefinedRetryPolicies
 import com.amazonaws.{AmazonClientException, ClientConfiguration, Request}
 import com.google.common.collect.ImmutableList
@@ -29,6 +28,8 @@ import com.google.common.io.Closeables
 import org.apache.commons.io.IOUtils
 
 import java.io.{BufferedInputStream, ByteArrayInputStream}
+import java.util.concurrent.ConcurrentHashMap
+import scala.collection.JavaConversions._
 
 
 /** A simple Repository implementation using AmazonHttpClient to read and write to API
@@ -218,5 +219,37 @@ class RestApiHelperImp extends RestApiHelper {
         }
         override def needsConnectionLeftOpen(): Boolean = false
       }).getAwsResponse
+  }
+}
+
+class RestApiHelperMock extends RestApiHelper {
+  private val mapRepo = new ConcurrentHashMap[ResultKey, AnalysisResult]()
+
+  override def writeHttpRequest(writeRequest: Request[Void]): Unit = {
+    val contentString = Option(IOUtils.toString(writeRequest.getContent, "UTF-8"))
+    val allResults = contentString
+      .map { text => AnalysisResultSerde.deserialize(text) }
+      .getOrElse(Seq.empty)
+    allResults.foreach(result => mapRepo.put(result.resultKey, result))
+  }
+
+  override def readHttpRequest[T](readRequest: Request[Void], readFunc: BufferedInputStream => T):
+  Option[T] = {
+    val analyzerResults = mapRepo.values.map { analysisResult =>
+      val requestedMetrics = analysisResult
+        .analyzerContext
+        .metricMap
+
+      AnalysisResult(analysisResult.resultKey, AnalyzerContext(requestedMetrics))
+    }
+      .toSeq
+    val serializedResult = AnalysisResultSerde.serialize(analyzerResults)
+    val byteArrayInputStream = new ByteArrayInputStream(serializedResult.getBytes("UTF-8"))
+    val bufferedInputStream = new BufferedInputStream(byteArrayInputStream)
+    try {
+      Option(readFunc(bufferedInputStream))
+    } finally {
+      Closeables.close(bufferedInputStream, false)
+    }
   }
 }

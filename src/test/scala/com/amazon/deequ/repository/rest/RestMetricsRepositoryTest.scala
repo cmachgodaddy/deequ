@@ -21,22 +21,17 @@ import com.amazon.deequ.analyzers._
 import com.amazon.deequ.analyzers.runners.AnalyzerContext._
 import com.amazon.deequ.analyzers.runners.{AnalysisRunner, AnalyzerContext}
 import com.amazon.deequ.metrics.{DoubleMetric, Entity, Metric}
-import com.amazon.deequ.repository.{AnalysisResult, AnalysisResultSerde, MetricsRepository, ResultKey}
+import com.amazon.deequ.repository.{MetricsRepository, ResultKey}
 import com.amazon.deequ.utils.{FixtureSupport}
-import com.amazonaws.{DefaultRequest, Request}
+import com.amazonaws.{DefaultRequest}
 import com.amazonaws.http.HttpMethodName
-import com.google.common.io.Closeables
-import org.apache.commons.io.IOUtils
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.scalatest.wordspec.AnyWordSpec
 
-import java.io.{BufferedInputStream, ByteArrayInputStream}
 import java.net.URI
 import java.time.{LocalDate, ZoneOffset}
-import java.util.concurrent.ConcurrentHashMap
 import scala.util.{Failure, Success}
 import scala.collection.JavaConverters._
-import scala.collection.JavaConversions._
 
 class RestMetricsRepositoryTest extends AnyWordSpec
   with SparkContextSpec with FixtureSupport {
@@ -300,37 +295,5 @@ class RestMetricsRepositoryTest extends AnyWordSpec
 
   private[this] def assertSameRows(dataFrameA: DataFrame, dataFrameB: DataFrame): Unit = {
     assert(dataFrameA.collect().toSet == dataFrameB.collect().toSet)
-  }
-}
-
-class RestApiHelperMock extends RestApiHelper {
-  private val mapRepo = new ConcurrentHashMap[ResultKey, AnalysisResult]()
-
-  override def writeHttpRequest(writeRequest: Request[Void]): Unit = {
-    val contentString = Option(IOUtils.toString(writeRequest.getContent, "UTF-8"))
-    val allResults = contentString
-      .map { text => AnalysisResultSerde.deserialize(text) }
-      .getOrElse(Seq.empty)
-    allResults.foreach(result => mapRepo.put(result.resultKey, result))
-  }
-
-  override def readHttpRequest[T](readRequest: Request[Void], readFunc: BufferedInputStream => T):
-  Option[T] = {
-    val analyzerResults = mapRepo.values.map { analysisResult =>
-      val requestedMetrics = analysisResult
-        .analyzerContext
-        .metricMap
-
-      AnalysisResult(analysisResult.resultKey, AnalyzerContext(requestedMetrics))
-    }
-      .toSeq
-    val serializedResult = AnalysisResultSerde.serialize(analyzerResults)
-    val byteArrayInputStream = new ByteArrayInputStream(serializedResult.getBytes("UTF-8"))
-    val bufferedInputStream = new BufferedInputStream(byteArrayInputStream)
-    try {
-      Option(readFunc(bufferedInputStream))
-    } finally {
-      Closeables.close(bufferedInputStream, false)
-    }
   }
 }
